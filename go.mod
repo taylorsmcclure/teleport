@@ -106,6 +106,8 @@ require (
 	k8s.io/client-go v0.0.0-20200827131824-5d33118d4742
 )
 
+require github.com/denisenkom/go-mssqldb v0.11.0
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v0.7.0 // indirect
 	github.com/Azure/go-autorest/autorest v0.9.6 // indirect
@@ -137,6 +139,7 @@ require (
 	github.com/go-logr/logr v0.2.0 // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
+	github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe // indirect
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/snappy v0.0.1 // indirect
 	github.com/google/certificate-transparency-go v1.0.21 // indirect
@@ -213,6 +216,8 @@ require (
 
 replace (
 	github.com/coreos/go-oidc => github.com/gravitational/go-oidc v0.0.5
+	github.com/denisenkom/go-mssqldb => github.com/gravitational/go-mssqldb v0.11.1-0.20220105204628-686cfd1547ca
+	// github.com/denisenkom/go-mssqldb => /Users/r0mant/code/go/src/github.com/gravitational/go-mssqldb
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible => github.com/golang-jwt/jwt v3.2.1+incompatible
 	github.com/gogo/protobuf => github.com/gravitational/protobuf v1.3.2-0.20201123192827-2b9fcfaffcbf
 	github.com/gravitational/teleport/api => ./api

@@ -503,6 +503,8 @@ const (
 	// differentiate between Cockroach and Postgres databases e.g. when
 	// selecting a CLI client to use.
 	ProtocolCockroachDB = "cockroachdb"
+	// ProtocolSQLServer is the Microsoft SQL Server database protocol.
+	ProtocolSQLServer = "sqlserver"
 )
 
 // DatabaseProtocols is a list of all supported database protocols.
@@ -511,6 +513,7 @@ var DatabaseProtocols = []string{
 	ProtocolMySQL,
 	ProtocolMongoDB,
 	ProtocolCockroachDB,
+	ProtocolSQLServer,
 }
 
 const (

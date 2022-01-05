@@ -251,6 +251,12 @@ type CLIConf struct {
 
 	// LocalProxyPort is a port used by local proxy listener.
 	LocalProxyPort string
+	// LocalProxyCAFile is the CA certificate used by local proxy.
+	LocalProxyCAFile string
+	// LocalProxyCertFile is the client certificate used by local proxy.
+	LocalProxyCertFile string
+	// LocalProxyKeyFile is the client key used by local proxy.
+	LocalProxyKeyFile string
 
 	// ConfigProxyTarget is the node which should be connected to in `tsh config-proxy`.
 	ConfigProxyTarget string
@@ -412,6 +418,9 @@ func Run(args []string, opts ...cliOption) error {
 	proxyDB := proxy.Command("db", "Start local TLS proxy for database connections when using Teleport in single-port mode")
 	proxyDB.Arg("db", "The name of the database to start local proxy for").Required().StringVar(&cf.DatabaseService)
 	proxyDB.Flag("port", " Specifies the source port used by proxy db listener").Short('p').StringVar(&cf.LocalProxyPort)
+	// proxyDB.Flag("ca-file", "CA file for proxy client TLS configuration").StringVar(&cf.LocalProxyCAFile)
+	proxyDB.Flag("cert-file", "Certificate file for proxy client TLS configuration").StringVar(&cf.LocalProxyCertFile)
+	proxyDB.Flag("key-file", "Key file for proxy client TLS configuration").StringVar(&cf.LocalProxyKeyFile)
 
 	// Databases.
 	db := app.Command("db", "View and control proxied databases.")

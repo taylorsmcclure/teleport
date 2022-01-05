@@ -202,6 +202,10 @@ func mkLocalProxy(cf *CLIConf, remoteProxyAddr string, protocol string, listener
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+	certs, err := mkLocalProxyCerts(cf)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	lp, err := alpnproxy.NewLocalProxy(alpnproxy.LocalProxyConfig{
 		InsecureSkipVerify: cf.InsecureSkipVerify,
 		RemoteProxyAddr:    remoteProxyAddr,
@@ -209,11 +213,23 @@ func mkLocalProxy(cf *CLIConf, remoteProxyAddr string, protocol string, listener
 		Listener:           listener,
 		ParentContext:      cf.Context,
 		SNI:                address.Host(),
+		Certs:              certs,
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 	return lp, nil
+}
+
+func mkLocalProxyCerts(cf *CLIConf) ([]tls.Certificate, error) {
+	if cf.LocalProxyCertFile == "" || cf.LocalProxyKeyFile == "" {
+		return []tls.Certificate{}, nil
+	}
+	cert, err := tls.LoadX509KeyPair(cf.LocalProxyCertFile, cf.LocalProxyKeyFile)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return []tls.Certificate{cert}, nil
 }
 
 func toALPNProtocol(dbProtocol string) (alpncommon.Protocol, error) {
@@ -224,6 +240,8 @@ func toALPNProtocol(dbProtocol string) (alpncommon.Protocol, error) {
 		return alpncommon.ProtocolPostgres, nil
 	case defaults.ProtocolMongoDB:
 		return alpncommon.ProtocolMongoDB, nil
+	case defaults.ProtocolSQLServer:
+		return alpncommon.ProtocolSQLServer, nil
 	default:
 		return "", trace.NotImplemented("%q protocol is not supported", dbProtocol)
 	}
