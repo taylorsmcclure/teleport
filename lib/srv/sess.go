@@ -1790,6 +1790,13 @@ func (s *session) trackerCreate(teleportUser string) error {
 		LastActive: time.Now().UTC(),
 	}
 
+	reason := s.scx.env[teleport.SSHSessionReasonEnv]
+	var invited []string
+	err := json.Unmarshal([]byte(s.scx.env[teleport.SSHSessionInvitedEnv]), &invited)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
 	req := &proto.CreateSessionRequest{
 		ID:          s.id.String(),
 		Namespace:   apidefaults.Namespace,
@@ -1801,9 +1808,11 @@ func (s *session) trackerCreate(teleportUser string) error {
 		Initiator:   initator,
 		Expires:     time.Now().UTC().Add(time.Hour * 24),
 		HostUser:    initator.User,
+		Reason:      reason,
+		Invited:     invited,
 	}
 
-	_, err := s.registry.auth.CreateSessionTracker(s.serverCtx, req)
+	_, err = s.registry.auth.CreateSessionTracker(s.serverCtx, req)
 	return trace.Wrap(err)
 }
 
