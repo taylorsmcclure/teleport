@@ -482,6 +482,12 @@ func FromEventFields(fields EventFields) (apievents.AuditEvent, error) {
 			return nil, trace.Wrap(err)
 		}
 		return &e, nil
+	case UserCertificateCreateEvent:
+		var e events.UserCertificateCreate
+		if err := utils.FastUnmarshal(data, &e); err != nil {
+			return nil, trace.Wrap(err)
+		}
+		return &e, nil
 	default:
 		return nil, trace.BadParameter("unknown event type: %q", eventType)
 	}

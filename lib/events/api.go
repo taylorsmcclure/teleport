@@ -180,6 +180,9 @@ const (
 	// UserPasswordChangeEvent is when the user changes their own password.
 	UserPasswordChangeEvent = "user.password_change"
 
+	// UserCertificateCreateEvent is emitted when a user certificate pair (X.509+SSH) is issued.
+	UserCertificateCreateEvent = "user.cert.create"
+
 	// UserExpires is when the user will expire.
 	UserExpires = "expires"
 

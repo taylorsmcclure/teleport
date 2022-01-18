@@ -1673,6 +1673,27 @@ message WindowsDesktopSessionEnd {
     map<string, string> DesktopLabels = 8 [ (gogoproto.jsontag) = "desktop_labels" ];
 }
 
+// UserCertificateCreate is emitted when a user certificate pair (X.509+SSH) is issued.
+message UserCertificateCreate {
+    // Metadata is a common event metadata.
+    Metadata Metadata = 1
+        [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+
+    // User is a common user event metadata
+    UserMetadata User = 2
+        [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+
+    // Subject is the string form of the Subject of the X.509 certificate
+    string Subject = 3 [ (gogoproto.jsontag) = "subject,omitempty" ];
+
+    // Expires is the expiration time point of the certificates
+    google.protobuf.Timestamp Expires = 4 [
+        (gogoproto.stdtime) = true,
+        (gogoproto.nullable) = false,
+        (gogoproto.jsontag) = "expires,omitempty"
+    ];
+}
+
 // OneOf is a union of one of audit events submitted to the auth service
 message OneOf {
     // Event is one of the audit events
@@ -1744,6 +1765,7 @@ message OneOf {
         events.PostgresFunctionCall PostgresFunctionCall = 65;
         events.AccessRequestDelete AccessRequestDelete = 66;
         events.SessionConnect SessionConnect = 67;
+        events.UserCertificateCreate UserCertificateCreate = 68;
     }
 }
 

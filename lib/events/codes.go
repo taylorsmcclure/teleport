@@ -302,6 +302,8 @@ const (
 	// RecoveryCodeUseFailureCode is an event code for when a
 	// recovery code was not used successfully.
 	RecoveryCodeUseFailureCode = "T1009W"
+	// UserCertificateCreateCode is the user certificate pair issuance code.
+	UserCertificateCreateCode = "T1010I"
 
 	// BillingCardCreateCode is an event code for when a user creates a new credit card.
 	BillingCardCreateCode = "TBL00I"
