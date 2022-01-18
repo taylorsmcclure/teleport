@@ -18,6 +18,7 @@ package mysql
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"time"
@@ -159,6 +160,11 @@ func (e *Engine) connect(ctx context.Context, sessionCtx *common.Session) (*clie
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+	// clientOpt sets tlsConfig in the mysql client.
+	// this is overridden for Cloud SQL secure connections.
+	clientOpt := func(conn *client.Conn) {
+		conn.SetTLSConfig(tlsConfig)
+	}
 	user := sessionCtx.DatabaseUser
 	var password string
 	switch {
@@ -191,6 +197,26 @@ func (e *Engine) connect(ctx context.Context, sessionCtx *common.Session) (*clie
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
+		// workaround issue generating ephemeral certs for secure connections
+		// by creating a TLS connection to the cloud proxy port (3307) and
+		// overridding mysql client's connection. mysql on 3306 does not trust
+		// the ephemeral cert's CA but cloud proxy does.
+		if sessionCtx.Database.GetTLS().Mode != types.DatabaseTLSMode_INSECURE {
+			uri := sessionCtx.Database.GetURI()
+			host, port, err := net.SplitHostPort(uri)
+			if err == nil && port == "3306" {
+				uri = net.JoinHostPort(host, "3307")
+				e.Log.Debug("Overrided URI port from 3306 to 3307")
+			}
+			tlsconn, err := tls.Dial("tcp", uri, tlsConfig)
+			if err != nil {
+				return nil, trace.Wrap(err)
+			}
+			clientOpt = func(conn *client.Conn) {
+				conn.Conn.Close() // close connection created by mysql client
+				conn.Conn = packet.NewTLSConn(tlsconn)
+			}
+		}
 	case sessionCtx.Database.IsAzure():
 		password, err = e.Auth.GetAzureAccessToken(ctx, sessionCtx)
 		if err != nil {
@@ -200,14 +226,13 @@ func (e *Engine) connect(ctx context.Context, sessionCtx *common.Session) (*clie
 		// alice@mysql-server-name.
 		user = fmt.Sprintf("%v@%v", user, sessionCtx.Database.GetAzure().Name)
 	}
+
 	// TODO(r0mant): Set CLIENT_INTERACTIVE flag on the client?
 	conn, err := client.Connect(sessionCtx.Database.GetURI(),
 		user,
 		password,
 		sessionCtx.DatabaseName,
-		func(conn *client.Conn) {
-			conn.SetTLSConfig(tlsConfig)
-		})
+		clientOpt)
 	if err != nil {
 		if trace.IsAccessDenied(common.ConvertError(err)) && sessionCtx.Database.IsRDS() {
 			return nil, trace.AccessDenied(`Could not connect to database:
