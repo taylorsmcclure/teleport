@@ -23,10 +23,11 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"strconv"
 
+	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/srv/db/common"
+	"github.com/gravitational/teleport/lib/srv/db/common/role"
 	"github.com/gravitational/teleport/lib/srv/db/sqlserver/protocol"
 	"github.com/gravitational/trace"
 
@@ -63,38 +64,41 @@ func (e *Engine) InitializeConnection(clientConn net.Conn, _ *common.Session) er
 func (e *Engine) SendError(err error) {
 }
 
-type connectInfo struct {
-	user string
-	db   string
-}
-
-func (e *Engine) handleLogin7() (*protocol.Login7Packet, error) {
+func (e *Engine) handleLogin7(sessionCtx *common.Session) error {
 	pkt, err := protocol.ReadLogin7Packet(e.clientConn)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
 	}
 
 	e.Log.Debugf("Got LOGIN7 packet: %#v.", pkt)
 
 	err = protocol.WriteLogin7Response(e.clientConn, pkt.Database)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return trace.Wrap(err)
+	}
+
+	sessionCtx.DatabaseUser = pkt.User
+	if pkt.Database != "" {
+		sessionCtx.DatabaseName = pkt.Database
 	}
 
 	e.Log.Debugf("LOGIN7 DONE ====")
-	return pkt, nil
+	return nil
 }
 
 //
 func (e *Engine) HandleConnection(ctx context.Context, sessionCtx *common.Session) error {
 	fmt.Println("=== [AGENT] Received SQL Server connection ===")
 
-	login7, err := e.handleLogin7()
+	err := e.handleLogin7(sessionCtx)
 	if err != nil {
 		return trace.Wrap(err)
 	}
 
-	// TODO: Add authz
+	err = e.checkAccess(ctx, sessionCtx)
+	if err != nil {
+		return trace.Wrap(err)
+	}
 
 	host, port, err := net.SplitHostPort(sessionCtx.Database.GetURI())
 	if err != nil {
@@ -106,26 +110,33 @@ func (e *Engine) HandleConnection(ctx context.Context, sessionCtx *common.Sessio
 		return trace.Wrap(err)
 	}
 
-	db := login7.Database
-	if db == "" {
-		db = "master"
+	auth, err := e.getAuth(sessionCtx)
+	if err != nil {
+		return trace.Wrap(err)
 	}
 
 	connector := mssql.NewConnectorConfig(msdsn.Config{
-		Host: host,
-		Port: portI,
-		//User:     os.Getenv("SQL_SERVER_USER"),
-		User:     login7.User,
-		Password: os.Getenv("SQL_SERVER_PASS"),
-		Database: db,
-		//Encryption: msdsn.EncryptionOff,
+		Host:       host,
+		Port:       portI,
 		Encryption: msdsn.EncryptionRequired,
 		TLSConfig:  &tls.Config{InsecureSkipVerify: true},
-		// OptionFlags1: login7.Fields.OptionFlags1,
-		// OptionFlags2: login7.Fields.OptionFlags2,
-		// TypeFlags:    login7.Fields.TypeFlags,
-		// OptionFlags3: login7.Fields.OptionFlags3,
-	}, nil)
+	}, auth)
+
+	// connector := mssql.NewConnectorConfig(msdsn.Config{
+	// 	Host: host,
+	// 	Port: portI,
+	// 	//User:     os.Getenv("SQL_SERVER_USER"),
+	// 	User:     sessionCtx.DatabaseUser,
+	// 	Password: os.Getenv("SQL_SERVER_PASS"),
+	// 	Database: sessionCtx.DatabaseName,
+	// 	//Encryption: msdsn.EncryptionOff,
+	// 	Encryption: msdsn.EncryptionRequired,
+	// 	TLSConfig:  &tls.Config{InsecureSkipVerify: true},
+	// 	// OptionFlags1: login7.Fields.OptionFlags1,
+	// 	// OptionFlags2: login7.Fields.OptionFlags2,
+	// 	// TypeFlags:    login7.Fields.TypeFlags,
+	// 	// OptionFlags3: login7.Fields.OptionFlags3,
+	// }, nil)
 
 	conn, err := connector.Connect(ctx)
 	if err != nil {
@@ -158,6 +169,33 @@ func (e *Engine) HandleConnection(ctx context.Context, sessionCtx *common.Sessio
 		e.Log.Debug("Context canceled.")
 	}
 
+	return nil
+}
+
+func (e *Engine) checkAccess(ctx context.Context, sessionCtx *common.Session) error {
+	ap, err := e.Auth.GetAuthPreference(ctx)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	mfaParams := services.AccessMFAParams{
+		Verified:       sessionCtx.Identity.MFAVerified != "",
+		AlwaysRequired: ap.GetRequireSessionMFA(),
+	}
+	// TODO(r0mant): Check database name matcher.
+	dbRoleMatchers := role.DatabaseRoleMatchers(
+		sessionCtx.Database.GetProtocol(),
+		sessionCtx.DatabaseUser,
+		sessionCtx.DatabaseName,
+	)
+	err = sessionCtx.Checker.CheckAccess(
+		sessionCtx.Database,
+		mfaParams,
+		dbRoleMatchers...,
+	)
+	if err != nil {
+		e.Audit.OnSessionStart(e.Context, sessionCtx, err)
+		return trace.Wrap(err)
+	}
 	return nil
 }
 
