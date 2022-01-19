@@ -225,8 +225,8 @@ require (
 
 replace (
 	github.com/coreos/go-oidc => github.com/gravitational/go-oidc v0.0.5
-	github.com/denisenkom/go-mssqldb => github.com/gravitational/go-mssqldb v0.11.1-0.20220105204628-686cfd1547ca
-	// github.com/denisenkom/go-mssqldb => /Users/r0mant/code/go/src/github.com/gravitational/go-mssqldb
+	// github.com/denisenkom/go-mssqldb => github.com/gravitational/go-mssqldb v0.11.1-0.20220105204628-686cfd1547ca
+	github.com/denisenkom/go-mssqldb => /Users/r0mant/code/go/src/github.com/gravitational/go-mssqldb
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible => github.com/golang-jwt/jwt v3.2.1+incompatible
 	github.com/gogo/protobuf => github.com/gravitational/protobuf v1.3.2-0.20201123192827-2b9fcfaffcbf
 	github.com/gravitational/teleport/api => ./api

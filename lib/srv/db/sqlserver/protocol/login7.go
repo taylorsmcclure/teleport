@@ -79,6 +79,7 @@ func ReadLogin7Packet(conn net.Conn) (*Login7Packet, error) {
 		return nil, trace.Wrap(err)
 	}
 	p := &Login7Packet{
+		Packet: *pkt,
 		Fields: fields,
 		Data:   buf.Bytes(), // Remaining unread portion of buffer is the login7 data.
 	}
@@ -91,6 +92,42 @@ func ReadLogin7Packet(conn net.Conn) (*Login7Packet, error) {
 		return nil, trace.Wrap(err)
 	}
 	return p, nil
+}
+
+func WriteLogin7ResponseTokens(conn net.Conn, tokens [][]byte) error {
+	var data []byte
+
+	for _, token := range tokens {
+		data = append(data, token...)
+	}
+
+	header := []byte{
+		PacketTypeResponse, // type
+		0x1,                // status - mark as last
+		0, 0,               // length
+		0, 0,
+		0, // packet ID
+		0,
+	}
+
+	// Update packet length.
+	binary.BigEndian.PutUint16(header[2:], uint16(len(data)+8))
+
+	pkt := append(header, data...)
+
+	//pkt = login7Bytes2
+
+	fmt.Println("=== SENT LOGIN7 PACKET ===")
+	fmt.Println(hex.Dump(pkt))
+	fmt.Println("=======================")
+
+	// Write packet to connection.
+	_, err := conn.Write(pkt)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	return nil
 }
 
 func WriteLogin7Response(conn net.Conn, db string) error {

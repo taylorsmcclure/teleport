@@ -41,7 +41,7 @@ type Proxy struct {
 	Log logrus.FieldLogger
 }
 
-// HandleConnection accepts connection from a Postgres client, authenticates
+// HandleConnection accepts connection from a SQL Server client, authenticates
 // it and proxies it to an appropriate database service.
 func (p *Proxy) HandleConnection(ctx context.Context, proxyCtx *common.ProxyContext, tlsConn *tls.Conn) error {
 	fmt.Println("=== [PROXY] === SQL SERVER")

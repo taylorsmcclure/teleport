@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strconv"
 
 	"github.com/gravitational/teleport/lib/services"
@@ -64,18 +65,18 @@ func (e *Engine) InitializeConnection(clientConn net.Conn, _ *common.Session) er
 func (e *Engine) SendError(err error) {
 }
 
-func (e *Engine) handleLogin7(sessionCtx *common.Session) error {
+func (e *Engine) handleLogin7(sessionCtx *common.Session) (*protocol.Login7Packet, error) {
 	pkt, err := protocol.ReadLogin7Packet(e.clientConn)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 
 	e.Log.Debugf("Got LOGIN7 packet: %#v.", pkt)
 
-	err = protocol.WriteLogin7Response(e.clientConn, pkt.Database)
-	if err != nil {
-		return trace.Wrap(err)
-	}
+	// err = protocol.WriteLogin7Response(e.clientConn, pkt.Database)
+	// if err != nil {
+	// 	return nil, trace.Wrap(err)
+	// }
 
 	sessionCtx.DatabaseUser = pkt.User
 	if pkt.Database != "" {
@@ -83,14 +84,14 @@ func (e *Engine) handleLogin7(sessionCtx *common.Session) error {
 	}
 
 	e.Log.Debugf("LOGIN7 DONE ====")
-	return nil
+	return pkt, nil
 }
 
 //
 func (e *Engine) HandleConnection(ctx context.Context, sessionCtx *common.Session) error {
 	fmt.Println("=== [AGENT] Received SQL Server connection ===")
 
-	err := e.handleLogin7(sessionCtx)
+	login7, err := e.handleLogin7(sessionCtx)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -110,33 +111,31 @@ func (e *Engine) HandleConnection(ctx context.Context, sessionCtx *common.Sessio
 		return trace.Wrap(err)
 	}
 
-	auth, err := e.getAuth(sessionCtx)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-
-	connector := mssql.NewConnectorConfig(msdsn.Config{
-		Host:       host,
-		Port:       portI,
-		Encryption: msdsn.EncryptionRequired,
-		TLSConfig:  &tls.Config{InsecureSkipVerify: true},
-	}, auth)
+	// auth, err := e.getAuth(sessionCtx)
+	// if err != nil {
+	// 	return trace.Wrap(err)
+	// }
 
 	// connector := mssql.NewConnectorConfig(msdsn.Config{
-	// 	Host: host,
-	// 	Port: portI,
-	// 	//User:     os.Getenv("SQL_SERVER_USER"),
-	// 	User:     sessionCtx.DatabaseUser,
-	// 	Password: os.Getenv("SQL_SERVER_PASS"),
-	// 	Database: sessionCtx.DatabaseName,
-	// 	//Encryption: msdsn.EncryptionOff,
+	// 	Host:       host,
+	// 	Port:       portI,
 	// 	Encryption: msdsn.EncryptionRequired,
 	// 	TLSConfig:  &tls.Config{InsecureSkipVerify: true},
-	// 	// OptionFlags1: login7.Fields.OptionFlags1,
-	// 	// OptionFlags2: login7.Fields.OptionFlags2,
-	// 	// TypeFlags:    login7.Fields.TypeFlags,
-	// 	// OptionFlags3: login7.Fields.OptionFlags3,
-	// }, nil)
+	// }, auth)
+
+	connector := mssql.NewConnectorConfig(msdsn.Config{
+		Host:         host,
+		Port:         portI,
+		User:         sessionCtx.DatabaseUser,
+		Password:     os.Getenv("SQL_SERVER_PASS"),
+		Database:     sessionCtx.DatabaseName,
+		Encryption:   msdsn.EncryptionRequired,
+		TLSConfig:    &tls.Config{InsecureSkipVerify: true},
+		OptionFlags1: login7.Fields.OptionFlags1,
+		OptionFlags2: login7.Fields.OptionFlags2,
+		TypeFlags:    login7.Fields.TypeFlags,
+		OptionFlags3: login7.Fields.OptionFlags3,
+	}, nil)
 
 	conn, err := connector.Connect(ctx)
 	if err != nil {
@@ -147,6 +146,11 @@ func (e *Engine) HandleConnection(ctx context.Context, sessionCtx *common.Sessio
 	mssqlConn, ok := conn.(*mssql.Conn)
 	if !ok {
 		return trace.BadParameter("expected *mssql.Conn, got: %T", conn)
+	}
+
+	err = protocol.WriteLogin7ResponseTokens(e.clientConn, mssqlConn.Login7Tokens())
+	if err != nil {
+		return trace.Wrap(err)
 	}
 
 	serverConn := mssqlConn.GetUnderlyingConn()
@@ -217,14 +221,14 @@ func (e *Engine) receiveFromClient(clientConn, serverConn io.ReadWriteCloser, cl
 
 		buf := append(pkt.PacketHeader.Raw, pkt.Data...)
 
-		if pkt.Type == protocol.PacketTypeSQLBatch {
-			sqlBatch, err := protocol.ParseSQLBatchPacket(pkt)
-			if err != nil {
-				log.WithError(err).Error("Failed to parse SQLBatch packet.")
-			} else {
-				log.Debugf("===> Got query: %v", sqlBatch.Query)
-			}
-		}
+		// if pkt.Type == protocol.PacketTypeSQLBatch {
+		// 	sqlBatch, err := protocol.ParseSQLBatchPacket(pkt)
+		// 	if err != nil {
+		// 		log.WithError(err).Error("Failed to parse SQLBatch packet.")
+		// 	} else {
+		// 		log.Debugf("===> Got query: %v", sqlBatch.Query)
+		// 	}
+		// }
 
 		// buf := make([]byte, 4096)
 
