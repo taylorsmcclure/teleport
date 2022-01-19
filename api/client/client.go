@@ -1326,11 +1326,11 @@ func (c *Client) GetOIDCConnectors(ctx context.Context, withSecrets bool) ([]typ
 
 // UpsertOIDCConnector creates or updates an OIDC connector.
 func (c *Client) UpsertOIDCConnector(ctx context.Context, oidcConnector types.OIDCConnector) error {
-	oidcConnectorV2, ok := oidcConnector.(*types.OIDCConnectorV2)
+	oidcConnectorV3, ok := oidcConnector.(*types.OIDCConnectorV3)
 	if !ok {
 		return trace.BadParameter("invalid type %T", oidcConnector)
 	}
-	_, err := c.grpc.UpsertOIDCConnector(ctx, oidcConnectorV2, c.callOpts...)
+	_, err := c.grpc.UpsertOIDCConnector(ctx, oidcConnectorV3, c.callOpts...)
 	return trail.FromGRPC(err)
 }
 
