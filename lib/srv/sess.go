@@ -1797,7 +1797,7 @@ func (s *session) trackerCreate(teleportUser string) error {
 		return trace.Wrap(err)
 	}
 
-	req := &proto.CreateSessionRequest{
+	req := &proto.CreateSessionTrackerRequest{
 		ID:          s.id.String(),
 		Namespace:   apidefaults.Namespace,
 		Type:        string(types.KubernetesSessionKind),
@@ -1822,10 +1822,10 @@ func (s *session) trackerAddParticipant(participant *party) error {
 	}
 
 	s.log.Debugf("Tracking participant: %v", participant.user)
-	req := &proto.UpdateSessionRequest{
+	req := &proto.UpdateSessionTrackerRequest{
 		SessionID: s.id.String(),
-		Update: &proto.UpdateSessionRequest_AddParticipant{
-			AddParticipant: &proto.AddParticipant{
+		Update: &proto.UpdateSessionTrackerRequest_AddParticipant{
+			AddParticipant: &proto.SessionTrackerAddParticipant{
 				Participant: &types.Participant{
 					ID:         participant.user,
 					User:       participant.user,
@@ -1846,10 +1846,10 @@ func (s *session) trackerRemoveParticipant(participantID string) error {
 	}
 
 	s.log.Debugf("Not tracking participant: %v", participantID)
-	req := &proto.UpdateSessionRequest{
+	req := &proto.UpdateSessionTrackerRequest{
 		SessionID: s.id.String(),
-		Update: &proto.UpdateSessionRequest_RemoveParticipant{
-			RemoveParticipant: &proto.RemoveParticipant{
+		Update: &proto.UpdateSessionTrackerRequest_RemoveParticipant{
+			RemoveParticipant: &proto.SessionTrackerRemoveParticipant{
 				ParticipantID: participantID,
 			},
 		},
@@ -1864,10 +1864,10 @@ func (s *session) trackerUpdateState(state types.SessionState) error {
 		return nil
 	}
 
-	req := &proto.UpdateSessionRequest{
+	req := &proto.UpdateSessionTrackerRequest{
 		SessionID: s.id.String(),
-		Update: &proto.UpdateSessionRequest_UpdateState{
-			UpdateState: &proto.UpdateState{
+		Update: &proto.UpdateSessionTrackerRequest_UpdateState{
+			UpdateState: &proto.SessionTrackerUpdateState{
 				State: state,
 			},
 		},
