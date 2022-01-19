@@ -1552,6 +1552,7 @@ func (tc *TeleportClient) Join(ctx context.Context, mode types.SessionParticipan
 	tc.startPortForwarding(ctx, nc)
 
 	presenceCtx, presenceCancel := context.WithCancel(ctx)
+	defer presenceCancel()
 
 	var beforeStart func(io.Writer)
 	if mode == types.SessionModeratorMode {
@@ -1564,7 +1565,6 @@ func (tc *TeleportClient) Join(ctx context.Context, mode types.SessionParticipan
 
 	// running shell with a given session means "join" it:
 	err = tc.runShell(nc, mode, session, beforeStart)
-	presenceCancel()
 	return trace.Wrap(err)
 }
 
