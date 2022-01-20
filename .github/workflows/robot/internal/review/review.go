@@ -18,8 +18,14 @@ package review
 
 import (
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"math/rand"
+	"net/http"
+	"net/url"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/gravitational/teleport/.github/workflows/robot/internal/github"
@@ -33,6 +39,8 @@ type Reviewer struct {
 	Team string `json:"team"`
 	// Owner is true if the reviewer is a code or docs owner (required for all reviews).
 	Owner bool `json:"owner"`
+	// GithubUsername is the reviewer's Github username
+	GithubUsername string `json:"username"`
 }
 
 // Config holds code reviewer configuration.
@@ -53,6 +61,9 @@ type Config struct {
 
 	// Admins are assigned reviews when no others match.
 	Admins []string `json:"admins"`
+
+	// ripplingToken is the Rippling API token.
+	ripplingToken string
 }
 
 // CheckAndSetDefaults checks and sets defaults.
@@ -79,21 +90,26 @@ func (c *Config) CheckAndSetDefaults() error {
 		return trace.BadParameter("missing parameter Admins")
 	}
 
+	if c.ripplingToken == "" {
+		return trace.BadParameter("missing parameter Token")
+	}
+
 	return nil
 }
 
 // Assignments can be used to assign and check code reviewers.
 type Assignments struct {
-	c *Config
+	c             *Config
+	leaveRequests map[string]bool
 }
 
 // FromString parses JSON formatted configuration and returns assignments.
-func FromString(reviewers string) (*Assignments, error) {
+func FromString(reviewers string, token string) (*Assignments, error) {
 	var c Config
 	if err := json.Unmarshal([]byte(reviewers), &c); err != nil {
 		return nil, trace.Wrap(err)
 	}
-
+	c.ripplingToken = token
 	r, err := New(&c)
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -107,17 +123,29 @@ func New(c *Config) (*Assignments, error) {
 	if err := c.CheckAndSetDefaults(); err != nil {
 		return nil, trace.Wrap(err)
 	}
-
+	onLeave, err := getLeaveMap(c.ripplingToken)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
 	return &Assignments{
-		c: c,
+		c:             c,
+		leaveRequests: onLeave,
 	}, nil
 }
 
 // IsInternal returns if the author of a PR is internal.
 func (r *Assignments) IsInternal(author string) bool {
-	_, code := r.c.CodeReviewers[author]
-	_, docs := r.c.DocsReviewers[author]
-	return code || docs
+	for _, reviewer := range r.c.CodeReviewers {
+		if reviewer.GithubUsername == author {
+			return true
+		}
+	}
+	for _, reviewer := range r.c.DocsReviewers {
+		if reviewer.GithubUsername == author {
+			return true
+		}
+	}
+	return false
 }
 
 // Get will return a list of code reviewers a given author.
@@ -145,7 +173,7 @@ func (r *Assignments) Get(author string, docs bool, code bool) []string {
 }
 
 func (r *Assignments) getDocsReviewers(author string) []string {
-	setA, setB := getReviewerSets(author, "Core", r.c.DocsReviewers, r.c.DocsReviewersOmit)
+	setA, setB := getReviewerSets(author, "Core", r.c.DocsReviewers, r.c.DocsReviewersOmit, nil)
 	reviewers := append(setA, setB...)
 
 	// If no docs reviewers were assigned, assign admin reviews.
@@ -178,14 +206,22 @@ func (r *Assignments) getAdminReviewers(author string) []string {
 func (r *Assignments) getCodeReviewerSets(author string) ([]string, []string) {
 	// Internal non-Core contributors get assigned from the admin reviewer set.
 	// Admins will review, triage, and re-assign.
-	v, ok := r.c.CodeReviewers[author]
-	if !ok || v.Team == "Internal" {
+	var githubAuthor *Reviewer
+	for _, reviewer := range r.c.CodeReviewers {
+		if reviewer.GithubUsername == author {
+			githubAuthor = &reviewer
+			break
+		}
+	}
+
+	if githubAuthor == nil || githubAuthor.Team == "Internal" {
 		reviewers := r.getAdminReviewers(author)
 		n := len(reviewers) / 2
 		return reviewers[:n], reviewers[n:]
 	}
 
-	return getReviewerSets(author, v.Team, r.c.CodeReviewers, r.c.CodeReviewersOmit)
+	return getReviewerSets(author, githubAuthor.Team, r.c.CodeReviewers, r.c.CodeReviewersOmit, nil)
+
 }
 
 // CheckExternal requires two admins have approved.
@@ -254,19 +290,25 @@ func (r *Assignments) checkDocsReviews(author string, reviews map[string]*github
 func (r *Assignments) checkCodeReviews(author string, reviews map[string]*github.Review) error {
 	// External code reviews should never hit this path, if they do, fail and
 	// return an error.
-	v, ok := r.c.CodeReviewers[author]
-	if !ok {
+	var rev *Reviewer
+	for _, reviewer := range r.c.CodeReviewers {
+		if reviewer.GithubUsername == author {
+			rev = &reviewer
+			break
+		}
+	}
+	if rev == nil {
 		return trace.BadParameter("rejecting checking external review")
 	}
 
 	// Internal Teleport reviews get checked by same Core rules. Other teams do
 	// own internal reviews.
-	team := v.Team
+	team := rev.Team
 	if team == "Internal" {
 		team = "Core"
 	}
 
-	setA, setB := getReviewerSets(author, team, r.c.CodeReviewers, r.c.CodeReviewersOmit)
+	setA, setB := getReviewerSets(author, team, r.c.CodeReviewers, r.c.CodeReviewersOmit, nil)
 
 	// PRs can be approved if you either have multiple code owners that approve
 	// or code owner and code reviewer.
@@ -280,28 +322,28 @@ func (r *Assignments) checkCodeReviews(author string, reviews map[string]*github
 	return trace.BadParameter("at least one approval required from each set %v %v", setA, setB)
 }
 
-func getReviewerSets(author string, team string, reviewers map[string]Reviewer, reviewersOmit map[string]bool) ([]string, []string) {
+func getReviewerSets(author string, team string, reviewers map[string]Reviewer, reviewersOmit map[string]bool, leaveRequests map[string]bool) ([]string, []string) {
 	var setA []string
 	var setB []string
 
-	for k, v := range reviewers {
+	for _, v := range reviewers {
 		// Only assign within a team.
 		if v.Team != team {
 			continue
 		}
 		// Skip over reviewers that are marked as omit.
-		if _, ok := reviewersOmit[k]; ok {
+		if _, ok := reviewersOmit[v.GithubUsername]; ok {
 			continue
 		}
 		// Skip author, can't assign/review own PR.
-		if k == author {
+		if v.GithubUsername == author {
 			continue
 		}
 
 		if v.Owner {
-			setA = append(setA, k)
+			setA = append(setA, v.GithubUsername)
 		} else {
-			setB = append(setB, k)
+			setB = append(setB, v.GithubUsername)
 		}
 	}
 
@@ -330,3 +372,159 @@ const (
 	// changesRequested is a code review where the reviewer has requested changes.
 	changesRequested = "CHANGES_REQUESTED"
 )
+
+func getLeaveMap(token string) (map[string]bool, error) {
+	omit := map[string]bool{}
+	now := time.Now()
+	leaveRequests, err := getLeaveRequests(now, token)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	for _, req := range leaveRequests {
+		if shouldOmit(now, req) {
+			omit[req.FullName] = true
+		}
+	}
+	return omit, nil
+}
+
+const (
+	// layout is the Time format layout
+	layout = "2006-01-02"
+	// approvedLeaveRequestStatus is the status of an
+	// approved leave request.
+	approvedLeaveRequestStatus = "APPROVED"
+)
+
+func getLeaveRequests(now time.Time, token string) ([]EmployeeLeaveRequest, error) {
+	ripplingUrl := url.URL{
+		Scheme: "https",
+		Host:   "api.rippling.com",
+		Path:   path.Join("platform", "api", "leave_requests"),
+	}
+
+	req, err := http.NewRequest(http.MethodGet, ripplingUrl.String(), nil)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	// Add authorization header.
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	// Start query 3 days in the past to get leave requests that may
+	// have already ended, but still need to omit the employee from
+	// reviews.
+	// 3 days is needed to account for non-business days plus the 1
+	// day post-leave omit period.
+	startQuery := now.AddDate(0, 0, -3)
+	formattedStart := fmt.Sprintf("%d-%02d-%02d",
+		startQuery.Year(), startQuery.Month(), startQuery.Day())
+
+	// End query 4 days in the future to get future leave requests of
+	// the reviewers that need to be omitted.
+	// 4 days is needed to account for non-business days plus the 2
+	// days pre-leave omit period.
+	endQuery := now.AddDate(0, 0, 4)
+	formattedEnd := fmt.Sprintf("%d-%02d-%02d",
+		endQuery.Year(), endQuery.Month(), endQuery.Day())
+
+	// Set query values.
+	q := req.URL.Query()
+	q.Add("from", formattedStart)
+	q.Add("to", formattedEnd)
+	q.Add("status", approvedLeaveRequestStatus)
+	req.URL.RawQuery = q.Encode()
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	var leaveRequests []EmployeeLeaveRequest
+	err = json.Unmarshal([]byte(body), &leaveRequests)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return leaveRequests, nil
+}
+
+func shouldOmit(date time.Time, req EmployeeLeaveRequest) bool {
+	// Leave is defined as being out for more than
+	// two business days.
+	if businessDaysCount(req) <= 2 {
+		return false
+	}
+
+	// Subtract two days to the beginning of the leave range
+	// to account for the pre-leave omit period.
+	additionalLeaveStart := -2
+
+	// Add a day to the end of the leave request range to account
+	// for the post-leave omit period.
+	additionalLeaveEnd := 1
+
+	// If the request starts on a Monday or Tuesday, subtract two
+	// more days to account for non-business days.
+	if req.StartDate.Weekday() == time.Monday || req.StartDate.Weekday() == time.Tuesday {
+		additionalLeaveStart -= 2
+	}
+
+	// If the leave request end date is a Friday, add two more days
+	// to account for non-business days.
+	if req.EndDate.Weekday() == time.Friday {
+		additionalLeaveEnd += 2
+	}
+
+	// Subtract and add 1 day to the range so the last return statement
+	// returns true if today lands on the start or end date of the
+	// leave request omit period.
+	start := req.StartDate.Time.AddDate(0, 0, additionalLeaveStart-1)
+	end := req.EndDate.AddDate(0, 0, additionalLeaveEnd+1)
+
+	return date.After(start) && date.Before(end)
+}
+
+// businessDaysCount gets the number of business days
+// during the leave request.
+func businessDaysCount(req EmployeeLeaveRequest) int {
+	start, end, totalDays, weekendDays := req.StartDate, req.EndDate, 0, 0
+	for !start.After(end.Time) {
+		totalDays++
+		if start.Weekday() == time.Saturday || start.Weekday() == time.Sunday {
+			weekendDays++
+		}
+		start.Time = start.AddDate(0, 0, 1)
+	}
+	return totalDays - weekendDays
+}
+
+// UnmarshalJSON unmarshals a string in the format of
+func (t *Time) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		return nil
+	}
+	timeToParse := strings.Trim(string(b[:]), "\"")
+	date, err := time.Parse(layout, timeToParse)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	*t = Time{date}
+	return nil
+}
+
+type Time struct {
+	time.Time
+}
+
+type EmployeeLeaveRequest struct {
+	FullName  string `json:"requestedByName"`
+	StartDate Time   `json:"startDate"`
+	EndDate   Time   `json:"endDate"`
+}
