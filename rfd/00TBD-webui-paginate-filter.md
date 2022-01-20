@@ -263,25 +263,25 @@ According to [rfc 3986](https://datatracker.ietf.org/doc/html/rfc3986#section-3.
 
 **Examples**
 
-| Bookmarkable Query Examples | Description                                           |
-|-----------------------------|-------------------------------------------------------|
-| `?query=<encoded string>`   |                                                       |
-| `?search=foo+bar+baz`       | rows contain search values `foo`, `bar` and `baz`     |
-| `?sort=hostname:desc`       | rows sorted by column `hostname`in `descending` order |
+| Query                                        | URL                                                                                       | Description                                                |
+|----------------------------------------------|-------------------------------------------------------------------------------------------|------------------------------------------------------------|
+| `labels.env == "prod" && labels.os == "mac"` | ?query=labels.env%20%3D%3D%20%22prod<br>%22%20%26%26%20labels.os%20%3D%3D<br>%20%22mac%22 | rows with label `env=prod` and `os=mac`                    |
+| `env prod "some phrase"`                     | ?search=env+prod+%22some%20phrase%22                                                      | rows contain search values `env`, `prod` and `some phrase` |
+| User clicks on sort buttons on table         | ?sort=hostname:desc                                                                       | rows sorted by column `hostname`in `descending` order      |
 
 <br/>
 
 **Complete URL Example:**
 
 ```
-https://cloud.dev/v1/webapi/sites/clusterName/nodes?query=<some-query>&sort=hostname:desc
+https://cloud.dev/web/cluster/some-cluster-name/nodes?query=labels.env%20%3D%3D%20%22prod%22%20%26%26%20labels.os%20%3D%3D%20%22mac%22&sort=hostname:desc
 
-// Makes request to an endpoint `/webapi/sites/:site/resources/:resourceType?limit=50&startKey=abc&query=<some-query>&sort=hostname:desc`
+// Makes request to an endpoint `/webapi/sites/:site/resources/:resourceType?limit=50&startKey=abc&query=labels.env%20%3D%3D%20%22prod%22%20%26%26%20labels.os%20%3D%3D%20%22mac%22&sort=hostname:desc`
 // And extract the following from url query params and sent to auth server:
 
 - Limit: 50
-- StartKey: abc
-- Query: some-query (unencoded)
+- StartKey: `abc`
+- Query: `labels.env == "prod" && labels.os == "mac"` (unencoded)
 - Sort: {col: `hostname`, dir: `desc`}
 ```
 
