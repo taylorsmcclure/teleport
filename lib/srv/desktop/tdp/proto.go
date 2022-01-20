@@ -305,6 +305,8 @@ type ClientUsername struct {
 	Username string
 }
 
+const windowsMaxUsernameLength = 256
+
 func (r ClientUsername) Encode() ([]byte, error) {
 	buf := new(bytes.Buffer)
 	buf.WriteByte(byte(TypeClientUsername))
@@ -322,7 +324,7 @@ func decodeClientUsername(in peekReader) (ClientUsername, error) {
 	if t != byte(TypeClientUsername) {
 		return ClientUsername{}, trace.BadParameter("got message type %v, expected TypeClientUsername(%v)", t, TypeClientUsername)
 	}
-	username, err := decodeString(in)
+	username, err := decodeString(in, windowsMaxUsernameLength)
 	if err != nil {
 		return ClientUsername{}, trace.Wrap(err)
 	}
@@ -332,6 +334,10 @@ func decodeClientUsername(in peekReader) (ClientUsername, error) {
 type Error struct {
 	Message string
 }
+
+// this doesn't really matter, as the TDP error message is only sent *to*
+// the browser (Teleport never receives this message, so won't be decoding it)
+const tdpMaxErrorMessageLength = 10240
 
 func (m Error) Encode() ([]byte, error) {
 	buf := new(bytes.Buffer)
@@ -350,7 +356,7 @@ func decodeError(in peekReader) (Error, error) {
 	if t != byte(TypeError) {
 		return Error{}, trace.BadParameter("got message type %v, expected TypeError(%v)", t, TypeError)
 	}
-	message, err := decodeString(in)
+	message, err := decodeString(in, tdpMaxErrorMessageLength)
 	if err != nil {
 		return Error{}, trace.Wrap(err)
 	}
@@ -407,11 +413,16 @@ func encodeString(w io.Writer, s string) error {
 	return nil
 }
 
-func decodeString(r io.Reader) (string, error) {
+func decodeString(r io.Reader, maxLen uint32) (string, error) {
 	var length uint32
 	if err := binary.Read(r, binary.BigEndian, &length); err != nil {
 		return "", trace.Wrap(err)
 	}
+
+	if length > maxLen {
+		return "", trace.BadParameter("TDP string length exceeds allowable limit of %d (%d)", maxLen, length)
+	}
+
 	s := make([]byte, int(length))
 	if _, err := io.ReadFull(r, s); err != nil {
 		return "", trace.Wrap(err)

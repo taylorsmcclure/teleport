@@ -27,6 +27,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/gravitational/trace"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,6 +65,12 @@ func TestBadDecode(t *testing.T) {
 	// 254 is an unknown message type.
 	_, err := Decode([]byte{254})
 	require.Error(t, err)
+}
+
+func TestRejectsLongUsername(t *testing.T) {
+	clientUsername := []byte{byte(TypeClientUsername), 0x00, 0x00, 0x10, 0x00, 'a', 'b', 'c', 'd'}
+	_, err := Decode(clientUsername)
+	require.True(t, trace.IsBadParameter(err))
 }
 
 var encodedFrame []byte
