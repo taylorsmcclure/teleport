@@ -48,7 +48,8 @@ type ServerConfig struct {
 // ForwardRequestPayload according to http://www.ietf.org/rfc/rfc4254.txt
 type ForwardRequestPayload struct {
 	// SingleConnection determines whether any connections will be forwarded
-	// after the first connection, or after the session is closed.
+	// after the first connection, or after the session is closed. In OpenSSH
+	// and Teleport SSH clients, SingleConnection is always set to false.
 	SingleConnection bool
 	// AuthProtocol is the name of the X11 authentication protocol being used.
 	AuthProtocol string
@@ -72,17 +73,16 @@ type X11ChannelRequestPayload struct {
 // authProto and authCookie are required to set up authentication with the Server. screenNumber is used
 // by the server to determine which screen should be connected to for x11 forwarding. singleConnection is
 // an optional argument to request x11 forwarding for a single connection.
-func RequestX11Forwarding(sess *ssh.Session, display, authProto, authCookie string, singleConnection bool) error {
+func RequestX11Forwarding(sess *ssh.Session, display, authProto, authCookie string) error {
 	_, _, screenNumber, err := parseDisplay(display)
 	if err != nil {
 		return trace.Wrap(err)
 	}
 
 	payload := ForwardRequestPayload{
-		SingleConnection: singleConnection,
-		AuthProtocol:     authProto,
-		AuthCookie:       authCookie,
-		ScreenNumber:     uint32(screenNumber),
+		AuthProtocol: authProto,
+		AuthCookie:   authCookie,
+		ScreenNumber: uint32(screenNumber),
 	}
 
 	ok, err := sess.SendRequest(sshutils.X11ForwardRequest, true, ssh.Marshal(payload))

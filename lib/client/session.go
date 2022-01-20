@@ -256,7 +256,7 @@ func (ns *NodeSession) handleX11Forwarding(ctx context.Context, sess *ssh.Sessio
 		return trace.Wrap(err)
 	}
 
-	if err := x11.RequestX11Forwarding(sess, ns.x11Display, ns.x11Proto, ns.x11FakeCookie, false); err != nil {
+	if err := x11.RequestX11Forwarding(sess, ns.x11Display, ns.x11Proto, ns.x11FakeCookie); err != nil {
 		// If x11 forwarding request failed, we must disable x11 forwarding
 		return ns.rejectX11Channels(ctx)
 	}
